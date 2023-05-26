@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>pdf2text-ocr</title>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.6.172/build/pdf.min.js "></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script type="module">
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.6.172/build/pdf.worker.js";
+
+      const readFile = (file) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.addEventListener("loadend", (event) =>
+            resolve(new Uint8Array(event.target.result))
+          );
+          reader.readAsArrayBuffer(file);
+        });
+      };
+
+      const convertToImage = async (pdf) => {
+        const container = document.getElementById("container");
+        const images = [];
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement("canvas");
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          container.appendChild(canvas);
+          await page.render({
+            canvasContext: canvas.getContext("2d"),
+            viewport: viewport,
+          }).promise;
+          images.push(canvas.toDataURL("image/png"));
+        }
+        return images;
+      };
+
+      const convertToText = async (images) => {
+        const language = "por";
+        const worker = await Tesseract.createWorker({
+          logger: (m) => console.log(m),
+        });
+        await worker.loadLanguage(language);
+        await worker.initialize(language);
+
+        const container = document.getElementById("container");
+        for (const image of images) {
+          const {
+            data: { text },
+          } = await worker.recognize(image);
+          console.log(text);
+          const section = document.createElement("section");
+          const pre = document.createElement("pre");
+          pre.appendChild(document.createTextNode(text));
+          section.appendChild(pre);
+          container.appendChild(section);
+        }
+
+        await worker.terminate();
+      };
+
+      const loadFile = async (file) =>
+        pdfjsLib.getDocument({ data: file }).promise;
+
+      const convertFile = async (file) => {
+        showLoading();
+        loadFile(file).then(async (pdf) => {
+          const images = await convertToImage(pdf);
+          await convertToText(images);
+          hideLoading();
+        });
+      };
+
+      const showLoading = () =>
+        (document.getElementById("loading").style.display = "block");
+
+      const hideLoading = () =>
+        (document.getElementById("loading").style.display = "none");
+
+      const fileInput = document.getElementById("file-input");
+      fileInput.addEventListener("change", async () =>
+        convertFile(await readFile(fileInput.files[0]))
+      );
+    </script>
+  </head>
+
+  <body>
+    <h1>pdf2text-ocr</h1>
+    <div>
+      <label for="file-input">Choose a pdf file</label><br />
+      <input type="file" id="file-input" name="file-input" multiple />
+    </div>
+    <div id="container"></div>
+    <div id="loading">Loading...</div>
+  </body>
+
+  <style>
+    body {
+      color: #212121;
+      font-family: Arial, sans-serif;
+      scroll-behavior: smooth;
+      font-size: 1.15rem;
+      line-height: 1.5;
+      max-width: 960px;
+      margin: auto;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    label {
+      padding: 0.5em;
+      border: thin solid grey;
+      border-radius: 3px;
+      cursor: pointer;
+      background-color: #f6f6fb;
+    }
+
+    #loading {
+      display: none;
+      margin-top: 2rem;
+      margin-bottom: 3rem;
+    }
+
+    section {
+      border-top: 1px solid #898ea4;
+      border-bottom: 1px solid #898ea4;
+      padding: 2rem 1rem;
+      margin: 3rem 0;
+    }
+
+    section + section,
+    section:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    pre {
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
+
+    canvas {
+      display: none;
+    }
+  </style>
+</html>
